@@ -6,12 +6,12 @@
 
 struct android_app;
 
-class Renderer {
+class renderer {
 public:
     /*!
-     * @param pApp the android_app this Renderer belongs to, needed to configure GL
+     * @param pApp the android_app this renderer belongs to, needed to configure GL
      */
-    inline explicit Renderer(android_app *pApp) :
+    inline explicit renderer(android_app *pApp) :
             app_(pApp),
             display_(EGL_NO_DISPLAY),
             surface_(EGL_NO_SURFACE),
@@ -21,7 +21,7 @@ public:
         initRenderer();
     }
 
-    virtual ~Renderer();
+    virtual ~renderer();
 
     /*!
      * Handles input from the android_app.
@@ -54,6 +54,8 @@ private:
     EGLContext context_;
     EGLint width_;
     EGLint height_;
+    double mouse_pos_x;
+    double mouse_pos_y;
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

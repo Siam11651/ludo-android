@@ -1,4 +1,5 @@
-#include "Renderer.hpp"
+#include "renderer.hpp"
+#include "ludo/screen.hpp"
 
 #include <game-activity/native_app_glue/android_native_app_glue.h>
 #include <GLES3/gl3.h>
@@ -7,9 +8,12 @@
 #include <vector>
 #include <cassert>
 
-#include "AndroidOut.hpp"
+#include <android-out.hpp>
+#include <ludo/sprite.hpp>
+#include <ludo/scene.hpp>
+#include <ludo/scenes/match_scene.hpp>
 
-Renderer::~Renderer() {
+renderer::~renderer() {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (context_ != EGL_NO_CONTEXT) {
@@ -25,20 +29,37 @@ Renderer::~Renderer() {
     }
 }
 
-void Renderer::render() {
+void renderer::render() {
+    ludo::time::start_frame();
     // Check to see if the surface has changed size. This is _necessary_ to do every frame when
     // using immersive mode as you'll get no other notification that your renderable area has
     // changed.
     updateRenderArea();
-    // clear the color buffer
-    glClear(GL_COLOR_BUFFER_BIT);
+    ludo::scene_manager::cleanup_previous_scene();
+
+    ludo::scene *current_scene = ludo::scene_manager::get_current_scene();
+
+    if(current_scene)
+    {
+        ludo::input::mouse new_mouse;
+        new_mouse.position = glm::vec2(mouse_pos_x, mouse_pos_y);
+
+        ludo::input::set_key(ludo::input::key::mouse_left, ludo::input::status::release);
+        ludo::input::set_mouse(new_mouse);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        current_scene->on_update();
+        ludo::animation::animate();
+        current_scene->draw();
+        current_scene->on_late_update();
+        current_scene->listen_events();
+    }
 
     // Present the rendered image. This is an implicit glFlush.
     auto swapResult = eglSwapBuffers(display_, surface_);
     assert(swapResult == EGL_TRUE);
 }
 
-void Renderer::initRenderer() {
+void renderer::initRenderer() {
     // Choose your render attributes
     constexpr EGLint attribs[] = {
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
@@ -111,23 +132,48 @@ void Renderer::initRenderer() {
     // enable alpha globally for now, you probably don't want to do this in a game
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    {
+        EGLint width;
+
+        eglQuerySurface(display_, surface_, EGL_WIDTH, &width);
+
+        ludo::screen::window_width = width;
+        ludo::screen::window_height = width * 4.0f / 3.0f;
+    }
+
+    ludo::sprite::initialise(app_);
+    ludo::scene_manager::set_current_scene(new ludo::match_scene());
 }
 
-void Renderer::updateRenderArea() {
+void renderer::updateRenderArea() {
     EGLint width;
+
     eglQuerySurface(display_, surface_, EGL_WIDTH, &width);
 
-    EGLint height;
-    eglQuerySurface(display_, surface_, EGL_HEIGHT, &height);
+    EGLint height = width * 4.0f / 3.0f;
+    EGLint y_offset = 0;
+    EGLint surface_height;
+
+    eglQuerySurface(display_, surface_, EGL_HEIGHT, &surface_height);
+
+    if(surface_height >= height)
+    {
+        y_offset = (surface_height - height) / 2;
+    }
 
     if (width != width_ || height != height_) {
         width_ = width;
         height_ = height;
-        glViewport(0, 0, width, height);
+
+        glViewport(0, y_offset, width, height);
     }
+
+    ludo::screen::window_width = width;
+    ludo::screen::window_height = height;
 }
 
-void Renderer::handleInput() {
+void renderer::handleInput() {
     // handle all queued inputs
     auto *inputBuffer = android_app_swap_input_buffers(app_);
     if (!inputBuffer) {
