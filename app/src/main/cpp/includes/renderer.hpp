@@ -3,6 +3,7 @@
 
 #include <EGL/egl.h>
 #include <memory>
+#include <ludo/input.hpp>
 
 struct android_app;
 
@@ -56,6 +57,8 @@ private:
     EGLint height_;
     double mouse_pos_x;
     double mouse_pos_y;
+    double y_remain = 0.0f;
+    ludo::input::status mouse_status = ludo::input::status::release;
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

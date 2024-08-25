@@ -39,12 +39,11 @@ void renderer::render() {
 
     ludo::scene *current_scene = ludo::scene_manager::get_current_scene();
 
-    if(current_scene)
-    {
+    if (current_scene) {
         ludo::input::mouse new_mouse;
-        new_mouse.position = glm::vec2(mouse_pos_x, mouse_pos_y);
+        new_mouse.position = glm::vec2(mouse_pos_x, mouse_pos_y - y_remain);
 
-        ludo::input::set_key(ludo::input::key::mouse_left, ludo::input::status::release);
+        ludo::input::set_key(ludo::input::key::mouse_left, mouse_status);
         ludo::input::set_mouse(new_mouse);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         current_scene->on_update();
@@ -57,6 +56,7 @@ void renderer::render() {
     // Present the rendered image. This is an implicit glFlush.
     auto swapResult = eglSwapBuffers(display_, surface_);
     assert(swapResult == EGL_TRUE);
+    ludo::time::end_frame();
 }
 
 void renderer::initRenderer() {
@@ -122,7 +122,6 @@ void renderer::initRenderer() {
     display_ = display;
     surface_ = surface;
     context_ = context;
-
     // make width and height invalid so it gets updated the first frame in @a updateRenderArea()
     width_ = -1;
     height_ = -1;
@@ -157,9 +156,9 @@ void renderer::updateRenderArea() {
 
     eglQuerySurface(display_, surface_, EGL_HEIGHT, &surface_height);
 
-    if(surface_height >= height)
-    {
+    if (surface_height >= height) {
         y_offset = (surface_height - height) / 2;
+        y_remain = surface_height - height - y_offset;
     }
 
     if (width != width_ || height != height_) {
@@ -176,6 +175,7 @@ void renderer::updateRenderArea() {
 void renderer::handleInput() {
     // handle all queued inputs
     auto *inputBuffer = android_app_swap_input_buffers(app_);
+
     if (!inputBuffer) {
         // no inputs yet.
         return;
@@ -183,80 +183,39 @@ void renderer::handleInput() {
 
     // handle motion events (motionEventsCounts can be 0).
     for (auto i = 0; i < inputBuffer->motionEventsCount; i++) {
-        auto &motionEvent = inputBuffer->motionEvents[i];
-        auto action = motionEvent.action;
-
+        GameActivityMotionEvent &motionEvent = inputBuffer->motionEvents[i];
+        int32_t action = motionEvent.action;
         // Find the pointer index, mask and bitshift to turn it into a readable value.
-        auto pointerIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
+        int32_t pointerIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
                 >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
-        aout << "Pointer(s): ";
-
         // get the x and y position of this event if it is not ACTION_MOVE.
-        auto &pointer = motionEvent.pointers[pointerIndex];
-        auto x = GameActivityPointerAxes_getX(&pointer);
-        auto y = GameActivityPointerAxes_getY(&pointer);
+        GameActivityPointerAxes &pointer = motionEvent.pointers[pointerIndex];
+
+        if (pointer.id == 0) {
+            mouse_pos_x = GameActivityPointerAxes_getX(&pointer);;
+            mouse_pos_y = GameActivityPointerAxes_getY(&pointer);;
+        }
 
         // determine the action type and process the event accordingly.
         switch (action & AMOTION_EVENT_ACTION_MASK) {
             case AMOTION_EVENT_ACTION_DOWN:
             case AMOTION_EVENT_ACTION_POINTER_DOWN:
-                aout << "(" << pointer.id << ", " << x << ", " << y << ") "
-                     << "Pointer Down";
-                break;
+                if (pointer.id == 0) {
+                    mouse_status = ludo::input::status::press;
+                }
 
+                break;
             case AMOTION_EVENT_ACTION_CANCEL:
-                // treat the CANCEL as an UP event: doing nothing in the app, except
-                // removing the pointer from the cache if pointers are locally saved.
-                // code pass through on purpose.
             case AMOTION_EVENT_ACTION_UP:
             case AMOTION_EVENT_ACTION_POINTER_UP:
-                aout << "(" << pointer.id << ", " << x << ", " << y << ") "
-                     << "Pointer Up";
-                break;
-
-            case AMOTION_EVENT_ACTION_MOVE:
-                // There is no pointer index for ACTION_MOVE, only a snapshot of
-                // all active pointers; app needs to cache previous active pointers
-                // to figure out which ones are actually moved.
-                for (auto index = 0; index < motionEvent.pointerCount; index++) {
-                    pointer = motionEvent.pointers[index];
-                    x = GameActivityPointerAxes_getX(&pointer);
-                    y = GameActivityPointerAxes_getY(&pointer);
-                    aout << "(" << pointer.id << ", " << x << ", " << y << ")";
-
-                    if (index != (motionEvent.pointerCount - 1)) aout << ",";
-                    aout << " ";
+                if (pointer.id == 0) {
+                    mouse_status = ludo::input::status::release;
                 }
-                aout << "Pointer Move";
-                break;
-            default:
-                aout << "Unknown MotionEvent Action: " << action;
         }
-        aout << std::endl;
     }
+
     // clear the motion input count in this buffer for main thread to re-use.
     android_app_clear_motion_events(inputBuffer);
-
-    // handle input key events.
-    for (auto i = 0; i < inputBuffer->keyEventsCount; i++) {
-        auto &keyEvent = inputBuffer->keyEvents[i];
-        aout << "Key: " << keyEvent.keyCode <<" ";
-        switch (keyEvent.action) {
-            case AKEY_EVENT_ACTION_DOWN:
-                aout << "Key Down";
-                break;
-            case AKEY_EVENT_ACTION_UP:
-                aout << "Key Up";
-                break;
-            case AKEY_EVENT_ACTION_MULTIPLE:
-                // Deprecated since Android API level 29.
-                aout << "Multiple Key Actions";
-                break;
-            default:
-                aout << "Unknown KeyEvent Action: " << keyEvent.action;
-        }
-        aout << std::endl;
-    }
     // clear the key input count too.
     android_app_clear_key_events(inputBuffer);
 }
