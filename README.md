@@ -1,6 +1,6 @@
 # Ludo for Android
 
-A port to [ludo](https://github.com/Siam11651/ludo)
+A port to [ludo](https://github.com/Siam11651/ludo) for android
 
 ## Building Steps:
 - Open Android Studio
